@@ -54,9 +54,18 @@ def get_connection():
         if os.path.exists(uri_file):
             with open(uri_file) as f:
                 uri = f.read().strip()
-    return psycopg2.connect(uri)
+    if not uri:
+        st.error("❌ DB_URI no configurada. Define la variable de entorno DB_URI.")
+        st.stop()
+    try:
+        return psycopg2.connect(uri)
+    except Exception as e:
+        st.error(f"❌ Error de conexión a la base de datos: {e}")
+        st.stop()
 
-conn = get_connection()
+if "conn" not in st.session_state:
+    st.session_state.conn = get_connection()
+conn = st.session_state.conn
 
 # ── Sidebar ───────────────────────────────────────────────────────────
 st.sidebar.title("📊 uPoints Dashboard")
