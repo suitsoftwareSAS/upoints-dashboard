@@ -90,7 +90,7 @@ brands_df = pd.read_sql(
 )
 brand_options = brands_df["name"].tolist()
 selected_brands = st.sidebar.multiselect(
-    "Marcas", brand_options, default=brand_options
+    "Marcas", brand_options, default=[]
 )
 
 if not selected_brands:
