@@ -6,6 +6,38 @@ import pandas as pd
 import psycopg2
 from datetime import datetime, timedelta, date
 import os
+import hmac
+
+# ── Autenticación ─────────────────────────────────────────────────────
+def check_password():
+    """Autenticación básica con usuario/contraseña por env vars."""
+    if "authenticated" in st.session_state and st.session_state["authenticated"]:
+        return True
+
+    admin_user = os.getenv("DASHBOARD_USER", "")
+    admin_pass = os.getenv("DASHBOARD_PASS", "")
+
+    # Si no hay credenciales configuradas, acceso libre
+    if not admin_user or not admin_pass:
+        st.session_state["authenticated"] = True
+        return True
+
+    with st.form("login"):
+        st.markdown("### 🔐 uPoints Dashboard")
+        user = st.text_input("Usuario")
+        pwd = st.text_input("Contraseña", type="password")
+        submit = st.form_submit_button("Ingresar")
+
+        if submit:
+            if user == admin_user and pwd == admin_pass:
+                st.session_state["authenticated"] = True
+                st.rerun()
+            else:
+                st.error("Usuario o contraseña incorrectos")
+    return False
+
+if not check_password():
+    st.stop()
 
 st.set_page_config(
     page_title="uPoints Dashboard",
