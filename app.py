@@ -9,19 +9,32 @@ import os
 import hmac
 
 # ── Autenticación ─────────────────────────────────────────────────────
-def check_password():
-    """Autenticación básica con usuario/contraseña por env vars."""
-    if "authenticated" in st.session_state and st.session_state["authenticated"]:
-        return True
+import hashlib
 
+def check_password():
+    """Autenticación con persistencia vía query params (sobrevive reloads)."""
     admin_user = os.getenv("DASHBOARD_USER", "")
     admin_pass = os.getenv("DASHBOARD_PASS", "")
 
-    # Si no hay credenciales configuradas, acceso libre
+    # Sin credenciales = acceso libre
     if not admin_user or not admin_pass:
         st.session_state["authenticated"] = True
         return True
 
+    # Token persistente: hash de user+pass para query param
+    auth_token = hashlib.sha256(f"{admin_user}:{admin_pass}".encode()).hexdigest()[:16]
+
+    # ¿Ya autenticado por query param?
+    params = st.query_params
+    if params.get("auth") == [auth_token]:
+        st.session_state["authenticated"] = True
+        return True
+
+    # ¿Ya autenticado en esta sesión?
+    if st.session_state.get("authenticated"):
+        return True
+
+    # Mostrar login
     with st.form("login"):
         st.markdown("### 🔐 uPoints Dashboard")
         user = st.text_input("Usuario")
@@ -31,6 +44,7 @@ def check_password():
         if submit:
             if user == admin_user and pwd == admin_pass:
                 st.session_state["authenticated"] = True
+                st.query_params["auth"] = auth_token
                 st.rerun()
             else:
                 st.error("Usuario o contraseña incorrectos")
