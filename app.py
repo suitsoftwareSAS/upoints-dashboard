@@ -12,29 +12,41 @@ import hmac
 import hashlib
 
 def check_password():
-    """Autenticación con persistencia vía query params (sobrevive reloads)."""
+    """Autenticación con cookie persistente (sobrevive F5/reloads)."""
     admin_user = os.getenv("DASHBOARD_USER", "")
     admin_pass = os.getenv("DASHBOARD_PASS", "")
 
-    # Sin credenciales = acceso libre
     if not admin_user or not admin_pass:
         st.session_state["authenticated"] = True
         return True
 
-    # Token persistente: hash de user+pass para query param
     auth_token = hashlib.sha256(f"{admin_user}:{admin_pass}".encode()).hexdigest()[:16]
 
-    # ¿Ya autenticado por query param?
+    # Leer cookie y redirigir con token en URL si existe
+    st.components.v1.html(f"""
+    <script>
+    const cookies = document.cookie.split('; ');
+    const auth = cookies.find(c => c.startsWith('upoints_auth='));
+    if (auth) {{
+        const token = auth.split('=')[1];
+        if (!window.location.search.includes('auth=' + token)) {{
+            const sep = window.location.search ? '&' : '?';
+            window.location.search += sep + 'auth=' + token;
+        }}
+    }}
+    </script>
+    """, height=0)
+
+    # Verificar token en URL
     params = st.query_params
     if params.get("auth") == [auth_token]:
         st.session_state["authenticated"] = True
         return True
 
-    # ¿Ya autenticado en esta sesión?
     if st.session_state.get("authenticated"):
         return True
 
-    # Mostrar login
+    # Login
     with st.form("login"):
         st.markdown("### 🔐 uPoints Dashboard")
         user = st.text_input("Usuario")
@@ -44,8 +56,14 @@ def check_password():
         if submit:
             if user == admin_user and pwd == admin_pass:
                 st.session_state["authenticated"] = True
-                st.query_params["auth"] = auth_token
-                st.rerun()
+                # Setear cookie y redirigir con token
+                st.components.v1.html(f"""
+                <script>
+                document.cookie = "upoints_auth={auth_token}; path=/; max-age=2592000; SameSite=Lax";
+                window.location.search = '?auth={auth_token}';
+                </script>
+                """, height=0)
+                st.stop()
             else:
                 st.error("Usuario o contraseña incorrectos")
     return False
@@ -103,15 +121,16 @@ brands_df = pd.read_sql(
     conn,
 )
 brand_options = brands_df["name"].tolist()
-selected_brands = st.sidebar.multiselect(
-    "Marcas", brand_options, default=[]
+selected_brand = st.sidebar.selectbox(
+    "Marca", brand_options, index=None, placeholder="Selecciona una marca..."
 )
 
-if not selected_brands:
-    st.warning("Selecciona al menos una marca")
+if not selected_brand:
+    st.info("👈 Selecciona una marca en el menú lateral")
     st.stop()
 
-brand_filter = "', '".join(selected_brands)
+selected_brands = [selected_brand]
+brand_filter = selected_brand
 
 # ── Queries ───────────────────────────────────────────────────────────
 @st.cache_data(ttl=300)
@@ -127,7 +146,7 @@ def load_customers(start, end, brands):
         JOIN customer c ON c.id = cbb."customerId"
         WHERE cbb."createdAt" BETWEEN '{start}' AND '{end} 23:59:59'
           AND cbb."deletedAt" IS NULL
-          AND b.name IN ('{brands}')
+          AND b.name = '{brand_filter}'
         GROUP BY b.name, DATE(cbb."createdAt")
         ORDER BY b.name, day
     """
@@ -147,7 +166,7 @@ def load_cashiers(start, end, brands):
           AND rp."deletedAt" IS NULL
           AND rp.points > 0
           AND rp."redeemByActor" = 'cashier'
-          AND br.name IN ('{brands}')
+          AND br.name = '{brand_filter}'
         GROUP BY br.name, ca.username, DATE(rp."createdAt")
         ORDER BY br.name, day
     """
@@ -162,7 +181,7 @@ def load_cashier_list(brands):
         JOIN businesses b ON b.id = ca."businessId"
         JOIN brands br ON br.id = b."brandId"
         WHERE ca."deletedAt" IS NULL AND b."deletedAt" IS NULL
-          AND br.name IN ('{brands}')
+          AND br.name = '{brand_filter}'
         ORDER BY br.name, ca.username
     """
     return pd.read_sql(query, conn)
