@@ -6,13 +6,12 @@ import pandas as pd
 import psycopg2
 from datetime import datetime, timedelta, date
 import os
-import hmac
-
-# ── Autenticación ─────────────────────────────────────────────────────
 import hashlib
 
+# ── Autenticación ─────────────────────────────────────────────────────
+
 def check_password():
-    """Autenticación con cookie persistente (sobrevive F5/reloads)."""
+    """Autenticación persistente via st.query_params (sobrevive F5/reloads)."""
     admin_user = os.getenv("DASHBOARD_USER", "")
     admin_pass = os.getenv("DASHBOARD_PASS", "")
 
@@ -22,24 +21,8 @@ def check_password():
 
     auth_token = hashlib.sha256(f"{admin_user}:{admin_pass}".encode()).hexdigest()[:16]
 
-    # Leer cookie y redirigir con token en URL si existe
-    st.components.v1.html(f"""
-    <script>
-    const cookies = document.cookie.split('; ');
-    const auth = cookies.find(c => c.startsWith('upoints_auth='));
-    if (auth) {{
-        const token = auth.split('=')[1];
-        if (!window.location.search.includes('auth=' + token)) {{
-            const sep = window.location.search ? '&' : '?';
-            window.location.search += sep + 'auth=' + token;
-        }}
-    }}
-    </script>
-    """, height=0)
-
-    # Verificar token en URL
-    params = st.query_params
-    if params.get("auth") == auth_token:
+    # Token en URL → autentica (persiste en F5 porque vive en la URL)
+    if st.query_params.get("auth") == auth_token:
         st.session_state["authenticated"] = True
         return True
 
@@ -56,14 +39,8 @@ def check_password():
         if submit:
             if user == admin_user and pwd == admin_pass:
                 st.session_state["authenticated"] = True
-                # Setear cookie y redirigir con token
-                st.components.v1.html(f"""
-                <script>
-                document.cookie = "upoints_auth={auth_token}; path=/; max-age=2592000; SameSite=Lax";
-                window.location.search = '?auth={auth_token}';
-                </script>
-                """, height=0)
-                st.stop()
+                st.query_params["auth"] = auth_token
+                st.rerun()
             else:
                 st.error("Usuario o contraseña incorrectos")
     return False
