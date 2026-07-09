@@ -39,7 +39,7 @@ def check_password():
 
     # Verificar token en URL
     params = st.query_params
-    if params.get("auth") == [auth_token]:
+    if params.get("auth") == auth_token:
         st.session_state["authenticated"] = True
         return True
 
